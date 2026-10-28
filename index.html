@@ -4,53 +4,112 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>제주 여행 추천 지도</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500&family=Noto+Serif+KR:wght@500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, sans-serif; }
-    #side {
-      position: fixed; z-index: 1000; top: 0; bottom: 0; left: 0; width: 380px; padding: 20px;
-      background: #fff; box-shadow: 2px 0 16px rgba(0, 0, 0, .15);
-      display: flex; flex-direction: column; gap: 14px;
+    :root {
+      --bg: #faf8f4;
+      --ink: #1d1d1b;
+      --muted: #8b877e;
+      --line: #e9e4da;
+      --accent: #9a7b45;
+      --side: 380px;
     }
-    #side h1 { margin: 0; font-size: 20px; }
-    #row { display: grid; gap: 8px; }
-    input, button { font: inherit; padding: 12px; border-radius: 10px; border: 1px solid #ccc; }
-    button { border: 0; background: #ff7a00; color: #fff; font-weight: 600; cursor: pointer; }
-    button:hover { background: #e66d00; }
-    button:disabled { background: #bbb; cursor: wait; }
-    #out { display: none; flex: 1; overflow-y: auto; gap: 10px; align-content: start; }
-    #out.show { display: grid; }
-    #weather { font-size: 13px; color: #0b5; font-weight: 600; }
-    #answer { white-space: pre-wrap; font-size: 14px; line-height: 1.6; }
-    #trace { font-size: 12px; color: #777; }
-    #map { position: fixed; top: 0; bottom: 0; right: 0; left: 380px; }
-    @media (max-width: 700px) {
-      #side { top: auto; width: 100%; max-height: 55vh; border-radius: 16px 16px 0 0; }
-      #map { left: 0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Noto Sans KR', system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+
+    /* 사이드바 */
+    #side {
+      position: fixed; z-index: 1000; inset: 0 auto 0 0; width: var(--side);
+      display: flex; flex-direction: column; gap: 28px; padding: 44px 34px 28px;
+      background: var(--bg); border-right: 1px solid var(--line);
+    }
+    h1 { margin: 0; font-family: 'Noto Serif KR', serif; font-weight: 500; font-size: 26px; letter-spacing: -.01em; }
+    h1::after { content: ''; display: block; width: 28px; height: 2px; margin-top: 14px; background: var(--accent); }
+
+    #row { display: grid; gap: 14px; }
+    #q {
+      width: 100%; font: inherit; font-size: 15px; color: var(--ink); padding: 10px 0;
+      background: transparent; border: 0; border-bottom: 1px solid var(--ink); border-radius: 0; outline: none;
+    }
+    #q::placeholder { color: #b3aea4; }
+    #go {
+      font: inherit; font-size: 14px; letter-spacing: .08em; padding: 13px; border: 0; cursor: pointer;
+      color: #fff; background: var(--ink); transition: background .2s;
+    }
+    #go:hover { background: var(--accent); }
+    #go:disabled { background: #bdb8ae; cursor: wait; }
+
+    /* 결과 */
+    #out { flex: 1; min-height: 0; overflow-y: auto; display: none; flex-direction: column; gap: 22px; }
+    #out.show { display: flex; }
+    #out::-webkit-scrollbar { width: 4px; }
+    #out::-webkit-scrollbar-thumb { background: var(--line); }
+
+    .weather { font-size: 13px; color: var(--muted); letter-spacing: .02em; }
+    .weather b { color: var(--ink); font-weight: 500; }
+    .answer { font-family: 'Noto Serif KR', serif; font-size: 14.5px; line-height: 1.9; white-space: pre-wrap; }
+    .loading { font-size: 13px; color: var(--muted); }
+
+    .spots { display: flex; flex-direction: column; }
+    .spot {
+      display: flex; align-items: baseline; gap: 14px; padding: 13px 0; cursor: pointer;
+      border-top: 1px solid var(--line); transition: padding-left .2s;
+    }
+    .spot:last-child { border-bottom: 1px solid var(--line); }
+    .spot:hover { padding-left: 6px; }
+    .spot .no { width: 16px; font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums; }
+    .spot .nm { font-size: 14px; font-weight: 500; }
+    .spot .ds { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+    /* 지도 */
+    #map { position: fixed; inset: 0 0 0 var(--side); background: #eceae5; }
+    .leaflet-tile-pane { filter: grayscale(.45) saturate(.8) brightness(1.04); }
+    .pin {
+      width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+      font: 500 12px 'Noto Sans KR', sans-serif; color: #fff; background: var(--ink);
+      border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, .3);
+    }
+    .pin.in { background: var(--accent); }
+    .leaflet-popup-content-wrapper { border-radius: 4px; box-shadow: 0 6px 22px rgba(0, 0, 0, .18); }
+    .leaflet-popup-content { margin: 12px 14px; font-family: 'Noto Sans KR', sans-serif; }
+    .pop b { font-family: 'Noto Serif KR', serif; font-weight: 500; font-size: 14px; }
+    .pop div { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+    @media (max-width: 760px) {
+      #side { inset: auto 0 0 0; width: 100%; max-height: 58vh; padding: 22px 20px 16px; gap: 16px; border-right: 0; border-top: 1px solid var(--line); }
+      h1 { font-size: 20px; }
+      h1::after { margin-top: 10px; }
+      #map { inset: 0; }
     }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <div id="side">
+
+  <aside id="side">
     <h1>제주 여행 추천</h1>
     <div id="row">
       <input id="q" placeholder="예: 내일 비 오는데 서쪽에서 갈 만한 곳" autocomplete="off">
       <button id="go">추천받기</button>
     </div>
-    <div id="out">
-      <div id="weather"></div>
-      <div id="answer"></div>
-      <div id="trace"></div>
-    </div>
-  </div>
+    <div id="out"></div>
+  </aside>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const map = L.map('map', { zoomSnap: 0.25, zoomDelta: 0.5, scrollWheelZoom: false }).setView([33.38, 126.55], 10);
+    const $ = (id) => document.getElementById(id);
+    const FAIL = '추천을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.';
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    const map = L.map('map', { zoomSnap: 0.25, zoomDelta: 0.5, scrollWheelZoom: false, zoomControl: false }).setView([33.38, 126.55], 10);
+    L.control.zoom({ position: 'topright' }).addTo(map);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors', maxZoom: 18,
     }).addTo(map);
+
     // 트랙패드 관성 스크롤이 여러 번 확대되지 않도록 휠 한 동작당 한 단계(0.5)만 확대한다.
     let lastZoomAt = 0;
     map.getContainer().addEventListener('wheel', (e) => {
@@ -60,23 +119,55 @@
       lastZoomAt = now;
       map.setZoomAround(map.mouseEventToContainerPoint(e), map.getZoom() + (e.deltaY < 0 ? 0.5 : -0.5));
     }, { passive: false });
-    const layer = L.layerGroup().addTo(map);
-    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-    const FAIL = '추천을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.';
-    function show(weatherText, answerText, traceText) {
-      out.classList.add('show');
-      weather.textContent = weatherText;
-      answer.textContent = answerText;
-      trace.textContent = traceText;
+    const layer = L.layerGroup().addTo(map);
+    let markers = [];
+
+    function render(data) {
+      const w = data.weather;
+      const weatherHtml = w
+        ? `<div class="weather"><b>${esc(w.area)}</b> · ${esc(w.now.weather)} ${w.now.temperature}°C · 오늘 강수확률 ${w.forecast[0].rain_probability}%</div>` : '';
+      const spotsHtml = data.spots.length
+        ? `<div class="spots">${data.spots.map((s, i) => `
+            <div class="spot" data-i="${i}">
+              <span class="no">${i + 1}</span><span class="nm">${esc(s.name)}</span>
+              <span class="ds">${s.indoor ? '실내' : '야외'} · ${esc(s.description)}</span>
+            </div>`).join('')}</div>` : '';
+      $('out').innerHTML = `${weatherHtml}<div class="answer">${esc(data.answer)}</div>${spotsHtml}`;
     }
 
-    async function ask() {
-      const message = q.value.trim();
-      if (!message) return;
-      go.disabled = true;
+    function drawMap(spots) {
       layer.clearLayers();
-      show('', '도구를 골라 검색하는 중…', '');
+      markers = spots.map((s, i) => {
+        const icon = L.divIcon({
+          className: '', iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -14],
+          html: `<div class="pin ${s.indoor ? 'in' : ''}">${i + 1}</div>`,
+        });
+        return L.marker([s.lat, s.lng], { icon }).addTo(layer).bindPopup(
+          `<div class="pop"><b>${esc(s.name)}</b><div>${esc(s.areas.join(', '))} · ${s.indoor ? '실내' : '야외'} · ${esc(s.description)}` +
+          (s.approx ? ' · 위치 대략' : '') + '</div></div>');
+      });
+      map.invalidateSize();
+      if (spots.length) map.flyToBounds(spots.map((s) => [s.lat, s.lng]), { padding: [60, 60], maxZoom: 13, duration: 1.2 });
+    }
+
+    $('out').addEventListener('click', (e) => {
+      const card = e.target.closest('.spot');
+      const m = card && markers[Number(card.dataset.i)];
+      if (!m) return;
+      map.flyTo(m.getLatLng(), 13, { duration: 0.9 });
+      m.openPopup();
+    });
+
+    function showOut(html) { $('out').classList.add('show'); $('out').innerHTML = html; }
+
+    async function ask() {
+      const message = $('q').value.trim();
+      if (!message) return;
+      $('go').disabled = true;
+      layer.clearLayers();
+      markers = [];
+      showOut('<div class="loading">찾는 중…</div>');
       try {
         const res = await fetch('/api/chat', {
           method: 'POST',
@@ -87,33 +178,22 @@
         let data;
         try { data = JSON.parse(raw); } catch {
           console.error('JSON이 아닌 응답', res.status, raw.slice(0, 300));
-          show('', FAIL, '');
+          showOut(`<div class="answer">${FAIL}</div>`);
           return;
         }
-        if (data.error) { console.error(data.error); show('', FAIL, ''); return; }
-
-        const w = data.weather;
-        show(
-          w ? `${w.area} 지금 ${w.now.weather} ${w.now.temperature}°C · 오늘 강수확률 ${w.forecast[0].rain_probability}%` : '',
-          data.answer,
-          data.trace.length ? '사용한 도구: ' + data.trace.map((t) => `${t.tool}(${Object.values(t.input).join(', ')})`).join(' → ') : ''
-        );
-        const pts = data.spots.map((s) => {
-          L.marker([s.lat, s.lng]).addTo(layer).bindPopup(
-            `<b>${esc(s.name)}</b><br>${esc(s.areas.join(', '))} · ${s.indoor ? '실내' : '야외'}<br>${esc(s.description)}` +
-            (s.approx ? '<br><small>위치는 대략적입니다</small>' : ''));
-          return [s.lat, s.lng];
-        });
-        if (pts.length) map.flyToBounds(pts, { padding: [40, 40], maxZoom: 13, duration: 1.2 });
+        if (data.error) { console.error(data.error); showOut(`<div class="answer">${FAIL}</div>`); return; }
+        render(data);
+        drawMap(data.spots);
       } catch (e) {
         console.error(e);
-        show('', FAIL, '');
+        showOut(`<div class="answer">${FAIL}</div>`);
       } finally {
-        go.disabled = false;
+        $('go').disabled = false;
       }
     }
-    go.addEventListener('click', ask);
-    q.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) ask(); });
+
+    $('go').addEventListener('click', ask);
+    $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) ask(); });
   </script>
 </body>
 </html>
