@@ -37,10 +37,19 @@
   </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const map = L.map('map', { zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 240, wheelDebounceTime: 80 }).setView([33.38, 126.55], 10);
+    const map = L.map('map', { zoomSnap: 0.25, zoomDelta: 0.5, scrollWheelZoom: false }).setView([33.38, 126.55], 10);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors', maxZoom: 18,
     }).addTo(map);
+    // 트랙패드 관성 스크롤이 여러 번 확대되지 않도록 휠 한 동작당 한 단계(0.5)만 확대한다.
+    let lastZoomAt = 0;
+    map.getContainer().addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const now = Date.now();
+      if (now - lastZoomAt < 350) return;
+      lastZoomAt = now;
+      map.setZoomAround(map.mouseEventToContainerPoint(e), map.getZoom() + (e.deltaY < 0 ? 0.5 : -0.5));
+    }, { passive: false });
     const layer = L.layerGroup().addTo(map);
     const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
