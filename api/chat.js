@@ -19,12 +19,17 @@ const SYSTEM = [
   '답변은 한국어로 짧게: 날씨 한 줄 요약, 추천 장소 3~5곳(이름과 이유)을 말한다.',
 ].join('\n');
 
+// 생각(thinking) 시간을 줄여 응답을 빠르게 한다. 'off'면 설정을 보내지 않는다.
+const THINKING_LEVEL = process.env.GEMINI_THINKING_LEVEL || 'low';
+let thinkingRejected = false; // 모델이 thinkingLevel을 거부하면 이후 요청에서 뺀다.
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const RETRY_STATUS = [500, 503, 504]; // 일시적인 서버 과부하
 const RETRY_WAIT = [1000, 2500]; // 최대 2번 재시도 (함수 제한 시간 30초 안에서)
 
 async function callGemini(contents, startedAt) {
   for (let attempt = 0; ; attempt++) {
+    const t0 = Date.now();
     const left = DEADLINE_MS - (Date.now() - startedAt);
     if (left < 3000) throw new Error('응답 시간이 너무 오래 걸려 중단했습니다.');
     const res = await fetch(ENDPOINT, {
@@ -35,10 +40,21 @@ async function callGemini(contents, startedAt) {
         system_instruction: { parts: [{ text: SYSTEM }] },
         contents,
         tools: geminiTools,
+        ...(THINKING_LEVEL !== 'off' && !thinkingRejected
+          ? { generationConfig: { thinkingConfig: { thinkingLevel: THINKING_LEVEL } } }
+          : {}),
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (res.ok) return data;
+    if (res.ok) {
+      log(`Gemini 응답 ${Date.now() - t0}ms`);
+      return data;
+    }
+    if (res.status === 400 && /think/i.test(data.error?.message || '') && !thinkingRejected) {
+      thinkingRejected = true;
+      log('thinkingLevel 거부됨 — 설정 없이 다시 시도', data.error.message);
+      continue;
+    }
 
     log('Gemini 오류', res.status, `시도 ${attempt + 1}`, JSON.stringify(data.error || data));
     if (RETRY_STATUS.includes(res.status) && attempt < RETRY_WAIT.length) {
