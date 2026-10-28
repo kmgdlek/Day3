@@ -3,7 +3,7 @@ module.exports = (req, res) => {
   res.status(200).json({
     ok: true,
     hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
-    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
     vercelEnv: process.env.VERCEL_ENV || null,
     node: process.version,
     time: new Date().toISOString(),
