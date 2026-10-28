@@ -83,7 +83,13 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message }),
         });
-        const data = await res.json();
+        const raw = await res.text();
+        let data;
+        try { data = JSON.parse(raw); } catch {
+          console.error('JSON이 아닌 응답', res.status, raw.slice(0, 300));
+          show('', FAIL, '');
+          return;
+        }
         if (data.error) { console.error(data.error); show('', FAIL, ''); return; }
 
         const w = data.weather;

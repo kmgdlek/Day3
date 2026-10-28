@@ -3,6 +3,7 @@ const { geminiTools, runTool, findSpots } = require('./tools');
 const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 const MAX_STEPS = 5;
+const DEADLINE_MS = 50000; // vercel.json의 maxDuration(60초)보다 먼저 JSON 오류로 끝내기 위한 한도
 
 // Vercel 대시보드 → Logs 에서 보인다. 키 값은 절대 찍지 않는다.
 const log = (...a) => console.log('[chat]', ...a);
@@ -22,9 +23,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const RETRY_STATUS = [500, 503, 504]; // 일시적인 서버 과부하
 const RETRY_WAIT = [1000, 2500]; // 최대 2번 재시도 (함수 제한 시간 30초 안에서)
 
-async function callGemini(contents) {
+async function callGemini(contents, startedAt) {
   for (let attempt = 0; ; attempt++) {
+    const left = DEADLINE_MS - (Date.now() - startedAt);
+    if (left < 3000) throw new Error('응답 시간이 너무 오래 걸려 중단했습니다.');
     const res = await fetch(ENDPOINT, {
+      signal: AbortSignal.timeout(left),
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
       body: JSON.stringify({
@@ -56,6 +60,7 @@ module.exports = async (req, res) => {
   const message = String(req.body?.message || '').trim().slice(0, 500);
   if (!message) return res.status(400).json({ error: '메시지를 입력해 주세요.' });
 
+  const startedAt = Date.now();
   const contents = [{ role: 'user', parts: [{ text: message }] }];
   const trace = []; // 어떤 도구를 어떤 입력으로 불렀는지(화면 표시용)
   const found = new Map(); // 지도에 표시할 장소(좌표 포함)
@@ -64,7 +69,7 @@ module.exports = async (req, res) => {
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
       log(`step ${step + 1}: Gemini 호출`);
-      const data = await callGemini(contents);
+      const data = await callGemini(contents, startedAt);
       const content = data.candidates?.[0]?.content;
       if (!content) {
         log('빈 응답', JSON.stringify({ finish: data.candidates?.[0]?.finishReason, feedback: data.promptFeedback }));
@@ -97,6 +102,7 @@ module.exports = async (req, res) => {
     return res.status(200).json({ answer: '도구 호출이 너무 길어져 중단했습니다. 질문을 더 간단히 해 주세요.', spots: [], weather, trace });
   } catch (e) {
     log('실패', e.stack || e.message);
-    return res.status(500).json({ error: e.message, trace });
+    const timedOut = e.name === 'TimeoutError' || e.name === 'AbortError';
+    return res.status(500).json({ error: timedOut ? '응답 시간이 너무 오래 걸려 중단했습니다.' : e.message, trace });
   }
 };
