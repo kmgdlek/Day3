@@ -37,7 +37,7 @@
   </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const map = L.map('map', { zoomSnap: 0.5, wheelPxPerZoomLevel: 240, wheelDebounceTime: 80 }).setView([33.38, 126.55], 10);
+    const map = L.map('map', { zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 240, wheelDebounceTime: 80 }).setView([33.38, 126.55], 10);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors', maxZoom: 18,
     }).addTo(map);
@@ -60,7 +60,7 @@
             (s.approx ? '<br><small>위치는 대략적입니다</small>' : ''));
           return [s.lat, s.lng];
         });
-        map.fitBounds(pts, { padding: [40, 40], maxZoom: 13 });
+        map.flyToBounds(pts, { padding: [40, 40], maxZoom: 13, duration: 1.2 });
         msg.textContent = `${data.total_matched}곳 중 ${data.count}곳 표시`;
       } catch (e) {
         msg.textContent = '데이터를 불러오지 못했습니다. 배포된 주소(/api/spots)에서 열어 주세요.';
