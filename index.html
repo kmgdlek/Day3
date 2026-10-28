@@ -55,7 +55,7 @@
 
     .spots { display: flex; flex-direction: column; }
     .spot {
-      display: flex; align-items: baseline; gap: 14px; padding: 13px 0; cursor: pointer;
+      display: flex; color: inherit; text-decoration: none; align-items: baseline; gap: 14px; padding: 13px 0; cursor: pointer;
       border-top: 1px solid var(--line); transition: padding-left .2s;
     }
     .spot:last-child { border-bottom: 1px solid var(--line); }
@@ -63,6 +63,8 @@
     .spot .no { width: 16px; font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums; }
     .spot .nm { font-size: 14px; font-weight: 500; }
     .spot .ds { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .spot .go { font-size: 12px; color: var(--line); transition: color .2s; }
+    .spot:hover .go { color: var(--accent); }
 
     /* 지도 */
     #map { position: fixed; inset: 0 0 0 var(--side); background: #eceae5; }
@@ -75,6 +77,7 @@
     .pin.in { background: var(--accent); }
     .leaflet-popup-content-wrapper { border-radius: 4px; box-shadow: 0 6px 22px rgba(0, 0, 0, .18); }
     .leaflet-popup-content { margin: 12px 14px; font-family: 'Noto Sans KR', sans-serif; }
+    .pop a { color: inherit; text-decoration: none; border-bottom: 1px solid var(--accent); }
     .pop b { font-family: 'Noto Serif KR', serif; font-weight: 500; font-size: 14px; }
     .pop div { font-size: 12px; color: var(--muted); margin-top: 3px; }
 
@@ -123,16 +126,20 @@
     const layer = L.layerGroup().addTo(map);
     let markers = [];
 
+    // 네이버 지도 검색(상세정보·리뷰·영업시간)으로 연결. 동명이 장소를 피하려고 '제주'를 붙인다.
+    const naverUrl = (name) => 'https://map.naver.com/p/search/' + encodeURIComponent('제주 ' + name);
+
     function render(data) {
       const w = data.weather;
       const weatherHtml = w
         ? `<div class="weather"><b>${esc(w.area)}</b> · ${esc(w.now.weather)} ${w.now.temperature}°C · 오늘 강수확률 ${w.forecast[0].rain_probability}%</div>` : '';
       const spotsHtml = data.spots.length
         ? `<div class="spots">${data.spots.map((s, i) => `
-            <div class="spot" data-i="${i}">
+            <a class="spot" href="${naverUrl(s.name)}" target="_blank" rel="noopener noreferrer" title="네이버 지도에서 상세정보 보기">
               <span class="no">${i + 1}</span><span class="nm">${esc(s.name)}</span>
               <span class="ds">${s.indoor ? '실내' : '야외'} · ${esc(s.description)}</span>
-            </div>`).join('')}</div>` : '';
+              <span class="go">↗</span>
+            </a>`).join('')}</div>` : '';
       $('out').innerHTML = `${weatherHtml}<div class="answer">${esc(data.answer)}</div>${spotsHtml}`;
     }
 
@@ -144,20 +151,12 @@
           html: `<div class="pin ${s.indoor ? 'in' : ''}">${i + 1}</div>`,
         });
         return L.marker([s.lat, s.lng], { icon }).addTo(layer).bindPopup(
-          `<div class="pop"><b>${esc(s.name)}</b><div>${esc(s.areas.join(', '))} · ${s.indoor ? '실내' : '야외'} · ${esc(s.description)}` +
+          `<div class="pop"><a href="${naverUrl(s.name)}" target="_blank" rel="noopener noreferrer"><b>${esc(s.name)}</b></a><div>${esc(s.areas.join(', '))} · ${s.indoor ? '실내' : '야외'} · ${esc(s.description)}` +
           (s.approx ? ' · 위치 대략' : '') + '</div></div>');
       });
       map.invalidateSize();
       if (spots.length) map.flyToBounds(spots.map((s) => [s.lat, s.lng]), { padding: [60, 60], maxZoom: 13, duration: 1.2 });
     }
-
-    $('out').addEventListener('click', (e) => {
-      const card = e.target.closest('.spot');
-      const m = card && markers[Number(card.dataset.i)];
-      if (!m) return;
-      map.flyTo(m.getLatLng(), 13, { duration: 0.9 });
-      m.openPopup();
-    });
 
     function showOut(html) { $('out').classList.add('show'); $('out').innerHTML = html; }
 
