@@ -55,7 +55,8 @@
 
     .spots { display: flex; flex-direction: column; }
     .spot {
-      display: flex; color: inherit; text-decoration: none; align-items: baseline; gap: 14px; padding: 13px 0; cursor: pointer;
+      display: flex; width: 100%; font: inherit; color: inherit; text-align: left; background: none; border: 0;
+      align-items: baseline; gap: 14px; padding: 13px 0; cursor: pointer;
       border-top: 1px solid var(--line); transition: padding-left .2s;
     }
     .spot:last-child { border-bottom: 1px solid var(--line); }
@@ -63,8 +64,7 @@
     .spot .no { width: 16px; font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums; }
     .spot .nm { font-size: 14px; font-weight: 500; }
     .spot .ds { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
-    .spot .go { font-size: 12px; color: var(--line); transition: color .2s; }
-    .spot:hover .go { color: var(--accent); }
+    .spot:hover .nm { border-bottom: 1px solid var(--accent); }
 
     /* 지도 */
     #map { position: fixed; inset: 0 0 0 var(--side); background: #eceae5; }
@@ -80,6 +80,25 @@
     .pop a { color: inherit; text-decoration: none; border-bottom: 1px solid var(--accent); }
     .pop b { font-family: 'Noto Serif KR', serif; font-weight: 500; font-size: 14px; }
     .pop div { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+    /* 상세 창 */
+    #modal { position: fixed; inset: 0; z-index: 3000; display: none; place-items: center; background: rgba(20, 20, 18, .45); padding: 16px; }
+    #modal.show { display: grid; }
+    .card { width: min(100%, 440px); max-height: 92vh; overflow-y: auto; background: var(--bg); box-shadow: 0 20px 60px rgba(0, 0, 0, .35); }
+    .card .mm { height: 210px; background: #eceae5; }
+    .card .body { padding: 22px 24px 24px; }
+    .card .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .card h2 { margin: 0; font-family: 'Noto Serif KR', serif; font-weight: 500; font-size: 22px; }
+    .card .x { font: inherit; font-size: 22px; line-height: 1; padding: 0 4px; background: none; border: 0; cursor: pointer; color: var(--muted); }
+    .card dl { margin: 18px 0 0; display: grid; grid-template-columns: 64px 1fr; gap: 10px 8px; font-size: 13px; }
+    .card dt { color: var(--muted); }
+    .card dd { margin: 0; }
+    .card .note { margin-top: 12px; font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+    .card .naver {
+      display: block; margin-top: 18px; padding: 13px; text-align: center; text-decoration: none;
+      font-size: 14px; letter-spacing: .04em; color: #fff; background: var(--ink); transition: background .2s;
+    }
+    .card .naver:hover { background: var(--accent); }
 
     @media (max-width: 760px) {
       #side { inset: auto 0 0 0; width: 100%; max-height: 58vh; padding: 22px 20px 16px; gap: 16px; border-right: 0; border-top: 1px solid var(--line); }
@@ -100,6 +119,10 @@
     </div>
     <div id="out"></div>
   </aside>
+
+  <div id="modal" role="dialog" aria-modal="true" aria-label="장소 상세정보">
+    <div class="card" id="card"></div>
+  </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
@@ -129,17 +152,19 @@
     // 네이버 지도 검색(상세정보·리뷰·영업시간)으로 연결. 동명이 장소를 피하려고 '제주'를 붙인다.
     const naverUrl = (name) => 'https://map.naver.com/p/search/' + encodeURIComponent('제주 ' + name);
 
+    let current = [];
+
     function render(data) {
+      current = data.spots;
       const w = data.weather;
       const weatherHtml = w
         ? `<div class="weather"><b>${esc(w.area)}</b> · ${esc(w.now.weather)} ${w.now.temperature}°C · 오늘 강수확률 ${w.forecast[0].rain_probability}%</div>` : '';
       const spotsHtml = data.spots.length
         ? `<div class="spots">${data.spots.map((s, i) => `
-            <a class="spot" href="${naverUrl(s.name)}" target="_blank" rel="noopener noreferrer" title="네이버 지도에서 상세정보 보기">
+            <button class="spot" data-i="${i}">
               <span class="no">${i + 1}</span><span class="nm">${esc(s.name)}</span>
               <span class="ds">${s.indoor ? '실내' : '야외'} · ${esc(s.description)}</span>
-              <span class="go">↗</span>
-            </a>`).join('')}</div>` : '';
+            </button>`).join('')}</div>` : '';
       $('out').innerHTML = `${weatherHtml}<div class="answer">${esc(data.answer)}</div>${spotsHtml}`;
     }
 
@@ -150,13 +175,64 @@
           className: '', iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -14],
           html: `<div class="pin ${s.indoor ? 'in' : ''}">${i + 1}</div>`,
         });
-        return L.marker([s.lat, s.lng], { icon }).addTo(layer).bindPopup(
-          `<div class="pop"><a href="${naverUrl(s.name)}" target="_blank" rel="noopener noreferrer"><b>${esc(s.name)}</b></a><div>${esc(s.areas.join(', '))} · ${s.indoor ? '실내' : '야외'} · ${esc(s.description)}` +
-          (s.approx ? ' · 위치 대략' : '') + '</div></div>');
+        return L.marker([s.lat, s.lng], { icon, title: s.name }).addTo(layer).on('click', () => openDetail(i));
       });
       map.invalidateSize();
       if (spots.length) map.flyToBounds(spots.map((s) => [s.lat, s.lng]), { padding: [60, 60], maxZoom: 13, duration: 1.2 });
     }
+
+    // ── 상세 창 ──
+    let miniMap = null;
+    const addrCache = {};
+
+    function closeDetail() {
+      $('modal').classList.remove('show');
+      if (miniMap) { miniMap.remove(); miniMap = null; }
+    }
+
+    async function reverseGeocode(lat, lng) {
+      const key = lat + ',' + lng;
+      if (addrCache[key]) return addrCache[key];
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&accept-language=ko&zoom=17&lat=${lat}&lon=${lng}`);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return (addrCache[key] = (await r.json()).display_name || '');
+    }
+
+    function openDetail(i) {
+      const s = current[i];
+      if (!s) return;
+      $('card').innerHTML = `
+        <div class="mm" id="mm"></div>
+        <div class="body">
+          <div class="top"><h2>${esc(s.name)}</h2><button class="x" aria-label="닫기">×</button></div>
+          <dl>
+            <dt>지역</dt><dd>${esc(s.areas.join(', '))}</dd>
+            <dt>구분</dt><dd>${s.indoor ? '실내' : '야외'} · ${esc(s.description)}</dd>
+            <dt>주소</dt><dd id="addr">불러오는 중…</dd>
+          </dl>
+          <div class="note">${s.approx ? '이 장소의 위치는 대략적인 추정값입니다. ' : '위치는 추정값이라 다소 어긋날 수 있습니다. '}정확한 위치·평점·리뷰·영업시간은 아래 네이버 지도에서 확인하세요.</div>
+          <a class="naver" href="${naverUrl(s.name)}" target="_blank" rel="noopener noreferrer">네이버 지도에서 평점·리뷰 보기 ↗</a>
+        </div>`;
+      $('modal').classList.add('show');
+      miniMap = L.map('mm', { zoomControl: false, attributionControl: false, scrollWheelZoom: false }).setView([s.lat, s.lng], 14);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(miniMap);
+      L.marker([s.lat, s.lng], {
+        icon: L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13], html: `<div class="pin ${s.indoor ? 'in' : ''}">${i + 1}</div>` }),
+      }).addTo(miniMap);
+      miniMap.invalidateSize();
+      reverseGeocode(s.lat, s.lng)
+        .then((a) => { if ($('addr')) $('addr').textContent = a || '주소 정보 없음'; })
+        .catch(() => { if ($('addr')) $('addr').textContent = '주소를 불러오지 못했습니다'; });
+    }
+
+    $('out').addEventListener('click', (e) => {
+      const row = e.target.closest('.spot');
+      if (row) openDetail(Number(row.dataset.i));
+    });
+    $('modal').addEventListener('click', (e) => {
+      if (e.target.id === 'modal' || e.target.closest('.x')) closeDetail();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDetail(); });
 
     function showOut(html) { $('out').classList.add('show'); $('out').innerHTML = html; }
 
