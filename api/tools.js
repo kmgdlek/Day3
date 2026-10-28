@@ -181,4 +181,4 @@ async function runTool(name, input) {
 const tools = [findSpotsTool, getWeatherTool];
 const geminiTools = [{ functionDeclarations: tools.map(toGeminiDeclaration) }];
 
-module.exports = { tools, geminiTools, findSpotsTool, getWeatherTool, findSpots, getWeather, runTool };
+module.exports = { tools, geminiTools, findSpotsTool, getWeatherTool, findSpots, getWeather, runTool, spots, locate, AREAS };
