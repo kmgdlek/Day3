@@ -232,7 +232,7 @@
             <dt>구분</dt><dd>${s.indoor ? '실내' : '야외'} · ${esc(s.description)}</dd>
             <dt>주소</dt><dd id="addr">불러오는 중…</dd>
           </dl>
-          <div class="note">${s.approx ? '이 장소의 위치는 대략적인 추정값입니다. ' : '위치는 추정값이라 다소 어긋날 수 있습니다. '}정확한 위치·평점·리뷰·영업시간은 아래 네이버 지도에서 확인하세요.</div>
+          <div class="note">${s.approx ? '이 장소의 위치는 대략적인 추정값입니다. ' : ''}정확한 위치·평점·리뷰·영업시간은 아래 네이버 지도에서 확인하세요.</div>
           <a class="naver" href="${naverUrl(s.name)}" target="_blank" rel="noopener noreferrer">네이버 지도에서 평점·리뷰 보기 ↗</a>
         </div>`;
       $('modal').classList.add('show');

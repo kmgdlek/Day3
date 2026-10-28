@@ -1,12 +1,13 @@
 const { spots } = require('../jeju_spots.json');
-const { coords, area_centers } = require('../jeju_coords.json');
+const { coords, area_centers, _verified } = require('../jeju_coords.json');
+const verified = new Set(_verified);
 
 const AREAS = ['동쪽', '서쪽', '서귀포', '제주시'];
 const MAX_RESULTS = 8;
 
-// 지도용 좌표. 좌표가 없는 장소는 지역 중심 근처(이름 기반 고정 오프셋)에 두고 approx로 표시한다.
+// 지도용 좌표. OpenStreetMap으로 확인한 장소만 approx:false, 추정값과 좌표가 없는 장소는 approx:true. 좌표가 없는 장소는 지역 중심 근처(이름 기반 고정 오프셋)에 두고 approx로 표시한다.
 function locate(spot) {
-  if (coords[spot.name]) return { lat: coords[spot.name][0], lng: coords[spot.name][1], approx: false };
+  if (coords[spot.name]) return { lat: coords[spot.name][0], lng: coords[spot.name][1], approx: !verified.has(spot.name) };
   const [lat, lng] = area_centers[spot.area];
   let h = 0;
   for (const ch of spot.name) h = (h * 31 + ch.charCodeAt(0)) % 9973;
