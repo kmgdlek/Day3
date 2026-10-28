@@ -6,28 +6,35 @@
   <title>제주 관광지 지도</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
+    * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, sans-serif; }
-    #bar { display: flex; gap: 12px; align-items: center; padding: 10px 16px; flex-wrap: wrap; }
-    #map { height: calc(100vh - 100px); }
-    #msg { padding: 0 16px 6px; font-size: 14px; color: #555; min-height: 20px; }
+    #map { position: fixed; inset: 0; }
+    #panel {
+      position: fixed; z-index: 1000; left: 50%; bottom: 24px; transform: translateX(-50%);
+      width: min(92vw, 420px); padding: 14px; background: #fff; border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, .22); display: grid; gap: 10px;
+    }
+    #row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    select, button { font: inherit; padding: 10px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
+    button { border: 0; background: #ff7a00; color: #fff; font-weight: 600; cursor: pointer; }
+    button:hover { background: #e66d00; }
+    #msg { font-size: 13px; color: #555; text-align: center; min-height: 18px; }
   </style>
 </head>
 <body>
-  <div id="bar">
-    <label>지역
-      <select id="area">
+  <div id="map"></div>
+  <div id="panel">
+    <div id="row">
+      <select id="area" aria-label="지역">
         <option>제주시</option><option>동쪽</option><option>서쪽</option><option>서귀포</option>
       </select>
-    </label>
-    <label>실내/야외
-      <select id="indoor">
-        <option value="">전체</option><option value="true">실내</option><option value="false">야외</option>
+      <select id="indoor" aria-label="실내/야외">
+        <option value="">실내/야외 전체</option><option value="true">실내</option><option value="false">야외</option>
       </select>
-    </label>
-    <button id="go">찾기</button>
+    </div>
+    <button id="go">관광지 찾기</button>
+    <div id="msg"></div>
   </div>
-  <div id="msg"></div>
-  <div id="map"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     const map = L.map('map').setView([33.38, 126.55], 10);
