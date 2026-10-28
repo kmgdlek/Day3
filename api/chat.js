@@ -1,12 +1,12 @@
 const { geminiTools, runTool, findSpots, getWeather, spots, locate, AREAS } = require('./tools');
 
-const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 // single(기본): 날씨·장소를 서버가 미리 모아 Gemini를 한 번만 호출. agent: Gemini가 도구를 직접 골라 여러 번 호출.
 const MODE = process.env.CHAT_MODE === 'agent' ? 'agent' : 'single';
 const MAX_STEPS = 5;
 const DEADLINE_MS = 50000; // vercel.json의 maxDuration(60초)보다 먼저 JSON 오류로 끝내기 위한 한도
-// 'low' 등을 넣으면 thinkingLevel로 보낸다. 기본은 설정을 보내지 않는다.
+// 생각(thinking)을 짧게: flash-lite는 기본이 minimal이라 설정을 보내지 않는다. 다른 모델이면 'low' 등을 환경변수로 지정.
 const THINKING_LEVEL = process.env.GEMINI_THINKING_LEVEL || 'off';
 
 // Vercel 대시보드 → Logs 에서 보인다. 키 값은 절대 찍지 않는다.
@@ -28,10 +28,10 @@ const AGENT_SYSTEM = [
 ].join('\n');
 
 const SINGLE_SYSTEM = [
-  ...RULES,
-  '아래 "날씨"와 "장소 목록"이 전부다. 이 안에서만 고른다.',
-  '추천하는 장소 이름은 반드시 [[이름]] 처럼 이중 대괄호로 감싸서 목록의 이름 그대로 쓴다.',
-  '비가 오거나 강수확률이 높으면 실내 장소를 우선한다.',
+  '제주 여행 추천 도우미. 한국어로 아주 짧게 답한다: 날씨 한 줄, 추천 3곳(이유 한 문장씩).',
+  '아래 날씨와 장소 목록 안에서만 고르고, 목록 밖 장소는 없다고 본다. *는 실내.',
+  '추천 장소 이름은 목록 그대로 [[이름]] 으로 감싼다(*는 빼고). 비가 오거나 강수확률이 높으면 실내를 우선한다.',
+  '지역 말이 없으면 알맞은 지역 하나를 골라 이유를 말한다. 운영시간·요금은 모른다고 한다.',
 ].join('\n');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -77,22 +77,40 @@ async function callGemini({ system, contents, withTools }, startedAt) {
 }
 
 // ---- single: 도구는 서버가 미리 실행하고, Gemini는 한 번만 호출 ----
+// 질문에 지역 단서가 있으면 그 지역만 보내 입력을 줄인다. 없으면 전체.
+const AREA_WORDS = {
+  동쪽: ['동쪽', '성산', '구좌', '일출봉', '섭지', '세화', '월정'],
+  서쪽: ['서쪽', '한림', '안덕', '협재', '산방', '용머리', '금능'],
+  서귀포: ['서귀포', '중문', '남원', '표선', '대정', '마라도', '가파도', '쇠소깍', '남쪽'],
+  제주시: ['제주시', '애월', '함덕', '조천', '우도', '추자', '한경', '공항', '북쪽'],
+};
+const inArea = (spot, area) => spot.area === area || spot.area.startsWith(area + '(');
+
 async function runSingle(message, startedAt) {
-  const weatherList = await Promise.all(AREAS.map((area) => getWeather({ area })));
-  log('날씨 조회', weatherList.map((w) => (w.error ? 'X' : 'O')).join(''));
+  const hit = AREAS.filter((a) => AREA_WORDS[a].some((w) => message.includes(w)));
+  const wanted = hit.length ? hit : AREAS;
+
+  const weatherList = await Promise.all(wanted.map((area) => getWeather({ area })));
+  log('날씨 조회', wanted.join(','), weatherList.map((w) => (w.error ? 'X' : 'O')).join(''));
 
   const weatherText = weatherList
     .map((w) =>
       w.error
-        ? `- ${w.area || '?'}: 조회 실패`
-        : `- ${w.area}: 지금 ${w.now.weather} ${w.now.temperature}°C, 예보 ` +
-          w.forecast.map((f) => `${f.date.slice(5)} ${f.weather} ${f.temp_min}~${f.temp_max}°C 강수${f.rain_probability}%`).join(' / ') +
-          `, 실내 우선 권장: ${w.prefer_indoor ? '예' : '아니오'}`
+        ? `${w.area || '?'}: 조회 실패`
+        : `${w.area}: 지금 ${w.now.weather} ${w.now.temperature}°C, 오늘 강수 ${w.forecast[0].rain_probability}%, ` +
+          `내일 ${w.forecast[1].weather} 강수 ${w.forecast[1].rain_probability}%, 실내 우선: ${w.prefer_indoor ? '예' : '아니오'}`
     )
     .join('\n');
-  const spotText = spots.map((s) => `${s.name}|${s.area}|${s.indoor ? '실내' : '야외'}|${s.type}`).join('\n');
 
-  const prompt = `[날씨]\n${weatherText}\n\n[장소 목록: 이름|지역|실내/야외|유형]\n${spotText}\n\n[사용자 요청]\n${message}`;
+  // 이름만 지역별로 한 줄에 묶고, 실내는 * 로 표시한다(유형은 보내지 않는다).
+  const spotText = wanted
+    .map((a) => {
+      const list = spots.filter((s) => inArea(s, a));
+      return `${a}: ` + list.map((s) => s.name + (s.indoor ? '*' : '')).join(', ');
+    })
+    .join('\n');
+
+  const prompt = `날씨\n${weatherText}\n\n장소(*=실내)\n${spotText}\n\n요청: ${message}`;
   const data = await callGemini({ system: SINGLE_SYSTEM, contents: [{ role: 'user', parts: [{ text: prompt }] }] }, startedAt);
 
   const raw = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('').trim();
