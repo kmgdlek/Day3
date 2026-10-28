@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>제주 여행 추천 지도</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,7 +15,7 @@
       --muted: #8b877e;
       --line: #e9e4da;
       --accent: #9a7b45;
-      --side: 380px;
+      --side: clamp(300px, 34vw, 400px);
     }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: 'Noto Sans KR', system-ui, sans-serif; color: var(--ink); background: var(--bg); }
@@ -23,7 +23,7 @@
     /* 사이드바 */
     #side {
       position: fixed; z-index: 1000; inset: 0 auto 0 0; width: var(--side);
-      display: flex; flex-direction: column; gap: 28px; padding: 44px 34px 28px;
+      display: flex; flex-direction: column; gap: 28px; padding: clamp(24px, 4vw, 44px) clamp(20px, 2.6vw, 34px) 28px;
       background: var(--bg); border-right: 1px solid var(--line);
     }
     h1 { margin: 0; font-family: 'Noto Serif KR', serif; font-weight: 500; font-size: 26px; letter-spacing: -.01em; }
@@ -36,7 +36,7 @@
     }
     #q::placeholder { color: #b3aea4; }
     #go {
-      font: inherit; font-size: 14px; letter-spacing: .08em; padding: 13px; border: 0; cursor: pointer;
+      font: inherit; font-size: 14px; letter-spacing: .08em; padding: 13px; min-height: 46px; border: 0; cursor: pointer;
       color: #fff; background: var(--ink); transition: background .2s;
     }
     #go:hover { background: var(--accent); }
@@ -84,7 +84,7 @@
     /* 상세 창 */
     #modal { position: fixed; inset: 0; z-index: 3000; display: none; place-items: center; background: rgba(20, 20, 18, .45); padding: 16px; }
     #modal.show { display: grid; }
-    .card { width: min(100%, 440px); max-height: 92vh; overflow-y: auto; background: var(--bg); box-shadow: 0 20px 60px rgba(0, 0, 0, .35); }
+    .card { width: min(100%, 440px); max-height: 92vh; max-height: 92dvh; overflow-y: auto; background: var(--bg); box-shadow: 0 20px 60px rgba(0, 0, 0, .35); }
     .card .mm { height: 210px; background: #eceae5; }
     .card .body { padding: 22px 24px 24px; }
     .card .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
@@ -100,11 +100,28 @@
     }
     .card .naver:hover { background: var(--accent); }
 
-    @media (max-width: 760px) {
-      #side { inset: auto 0 0 0; width: 100%; max-height: 58vh; padding: 22px 20px 16px; gap: 16px; border-right: 0; border-top: 1px solid var(--line); }
+    /* 세로 화면의 폰·작은 태블릿: 지도를 전체로 두고 아래에서 올라오는 패널 */
+    @media (max-width: 760px) and (orientation: portrait) {
+      #side {
+        inset: auto 0 0 0; width: 100%; max-height: 52vh; max-height: 52dvh; gap: 14px; border-right: 0;
+        padding: 20px 20px max(16px, env(safe-area-inset-bottom));
+        border-top: 1px solid var(--line); border-radius: 18px 18px 0 0; box-shadow: 0 -8px 28px rgba(0, 0, 0, .14);
+      }
       h1 { font-size: 20px; }
       h1::after { margin-top: 10px; }
+      #q { font-size: 16px; } /* iOS 가 16px 미만 입력칸을 확대하는 것 방지 */
       #map { inset: 0; }
+      .card .mm { height: 170px; }
+      .card .body { padding: 18px 18px 20px; }
+    }
+    /* 가로로 눕힌 폰처럼 높이가 낮은 화면: 왼쪽 패널을 촘촘하게 */
+    @media (orientation: landscape) and (max-height: 520px) {
+      #side { gap: 14px; padding: 16px 18px 12px; }
+      h1 { font-size: 20px; }
+      h1::after { margin-top: 8px; }
+      #q { padding: 6px 0; }
+      #go { padding: 9px; min-height: 40px; }
+      .card .mm { height: 130px; }
     }
   </style>
 </head>
@@ -178,7 +195,12 @@
         return L.marker([s.lat, s.lng], { icon, title: s.name }).addTo(layer).on('click', () => openDetail(i));
       });
       map.invalidateSize();
-      if (spots.length) map.flyToBounds(spots.map((s) => [s.lat, s.lng]), { padding: [60, 60], maxZoom: 13, duration: 1.2 });
+      // 폰 세로 화면에서는 아래 패널이 지도를 가리므로 그만큼 비워 두고 맞춘다.
+      const sheet = matchMedia('(max-width: 760px) and (orientation: portrait)').matches;
+      const opt = sheet
+        ? { paddingTopLeft: [30, 40], paddingBottomRight: [30, $('side').offsetHeight + 30] }
+        : { padding: [60, 60] };
+      if (spots.length) map.flyToBounds(spots.map((s) => [s.lat, s.lng]), { ...opt, maxZoom: 13, duration: 1.2 });
     }
 
     // ── 상세 창 ──
