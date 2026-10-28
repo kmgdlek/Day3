@@ -69,9 +69,116 @@ const findSpotsTool = {
   },
 };
 
-function runTool(name, input) {
+
+// ---- get_weather (Open-Meteo, API 키 불필요) ----
+const AREA_POINTS = {
+  제주시: [33.4996, 126.5312],
+  동쪽: [33.4580, 126.8800],
+  서쪽: [33.3900, 126.2400],
+  서귀포: [33.2541, 126.5600],
+};
+
+const WMO = {
+  0: '맑음', 1: '대체로 맑음', 2: '구름 조금', 3: '흐림', 45: '안개', 48: '안개',
+  51: '이슬비', 53: '이슬비', 55: '이슬비', 56: '어는 이슬비', 57: '어는 이슬비',
+  61: '비', 63: '비', 65: '강한 비', 66: '어는 비', 67: '어는 비',
+  71: '눈', 73: '눈', 75: '많은 눈', 77: '싸락눈',
+  80: '소나기', 81: '소나기', 82: '강한 소나기', 85: '눈 소나기', 86: '눈 소나기',
+  95: '뇌우', 96: '우박 동반 뇌우', 99: '우박 동반 뇌우',
+};
+const wmo = (code) => WMO[code] || '알 수 없음';
+
+async function getWeather({ area } = {}) {
+  if (!AREA_POINTS[area]) {
+    return { error: 'area는 동쪽 · 서쪽 · 서귀포 · 제주시 중 하나여야 합니다.' };
+  }
+  const [lat, lng] = AREA_POINTS[area];
+  const url =
+    'https://api.open-meteo.com/v1/forecast' +
+    `?latitude=${lat}&longitude=${lng}` +
+    '&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m' +
+    '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
+    '&timezone=Asia%2FSeoul&forecast_days=3';
+
+  let data;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+  } catch (e) {
+    return { error: `날씨를 가져오지 못했습니다: ${e.message}` };
+  }
+
+  const c = data.current;
+  const forecast = data.daily.time.map((date, i) => ({
+    date,
+    weather: wmo(data.daily.weather_code[i]),
+    temp_min: data.daily.temperature_2m_min[i],
+    temp_max: data.daily.temperature_2m_max[i],
+    rain_probability: data.daily.precipitation_probability_max[i],
+  }));
+  const rainyNow = c.precipitation > 0 || c.weather_code >= 51;
+
+  return {
+    area,
+    now: {
+      time: c.time,
+      weather: wmo(c.weather_code),
+      temperature: c.temperature_2m,
+      feels_like: c.apparent_temperature,
+      precipitation_mm: c.precipitation,
+      wind_kmh: c.wind_speed_10m,
+    },
+    forecast,
+    // 현재 비가 오거나 오늘 강수확률이 높으면 실내 장소를 우선 권한다.
+    prefer_indoor: rainyNow || forecast[0].rain_probability >= 60,
+  };
+}
+
+const getWeatherTool = {
+  name: 'get_weather',
+  description:
+    '제주 지역(동쪽 · 서쪽 · 서귀포 · 제주시)의 현재 날씨와 오늘부터 3일간 예보(날씨 · 기온 · 강수확률)를 Open-Meteo에서 가져온다. ' +
+    'prefer_indoor가 true면 비 등으로 실내 장소를 우선 추천하는 편이 좋다는 뜻이다. ' +
+    '장소 목록은 주지 않으므로 장소는 find_spots로 찾는다.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      area: {
+        type: 'string',
+        enum: AREAS,
+        description: '날씨를 볼 지역. 동쪽 · 서쪽 · 서귀포 · 제주시 중 하나.',
+      },
+    },
+    required: ['area'],
+    additionalProperties: false,
+  },
+};
+
+// Gemini function calling은 additionalProperties를 받지 않고 type을 대문자로 쓴다.
+function toGeminiSchema(schema) {
+  const { additionalProperties, ...rest } = schema;
+  const out = { ...rest, type: String(schema.type).toUpperCase() };
+  if (schema.properties) {
+    out.properties = Object.fromEntries(
+      Object.entries(schema.properties).map(([k, v]) => [k, toGeminiSchema(v)])
+    );
+  }
+  return out;
+}
+const toGeminiDeclaration = (t) => ({
+  name: t.name,
+  description: t.description,
+  parameters: toGeminiSchema(t.input_schema),
+});
+
+async function runTool(name, input) {
   if (name === 'find_spots') return findSpots(input);
+  if (name === 'get_weather') return getWeather(input);
   return { error: `알 수 없는 도구: ${name}` };
 }
 
-module.exports = { tools: [findSpotsTool], findSpotsTool, findSpots, runTool };
+const tools = [findSpotsTool, getWeatherTool];
+const geminiTools = [{ functionDeclarations: tools.map(toGeminiDeclaration) }];
+
+module.exports = { tools, geminiTools, findSpotsTool, getWeatherTool, findSpots, getWeather, runTool };
