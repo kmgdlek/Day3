@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>제주 관광지 지도</title>
+  <title>제주 여행 추천 지도</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
     * { box-sizing: border-box; }
@@ -11,29 +11,33 @@
     #map { position: fixed; inset: 0; }
     #panel {
       position: fixed; z-index: 1000; left: 50%; bottom: 24px; transform: translateX(-50%);
-      width: min(92vw, 420px); padding: 14px; background: #fff; border-radius: 16px;
+      width: min(92vw, 460px); padding: 14px; background: #fff; border-radius: 16px;
       box-shadow: 0 4px 20px rgba(0, 0, 0, .22); display: grid; gap: 10px;
     }
-    #row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    select, button { font: inherit; padding: 10px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
+    #row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    input, button { font: inherit; padding: 10px; border-radius: 10px; border: 1px solid #ccc; }
     button { border: 0; background: #ff7a00; color: #fff; font-weight: 600; cursor: pointer; }
     button:hover { background: #e66d00; }
-    #msg { font-size: 13px; color: #555; text-align: center; min-height: 18px; }
+    button:disabled { background: #bbb; cursor: wait; }
+    #out { display: none; max-height: 34vh; overflow-y: auto; gap: 8px; }
+    #out.show { display: grid; }
+    #weather { font-size: 13px; color: #0b5; font-weight: 600; }
+    #answer { white-space: pre-wrap; font-size: 14px; line-height: 1.5; }
+    #trace { font-size: 12px; color: #777; }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <div id="panel">
-    <div id="row">
-      <select id="area" aria-label="지역">
-        <option>제주시</option><option>동쪽</option><option>서쪽</option><option>서귀포</option>
-      </select>
-      <select id="indoor" aria-label="실내/야외">
-        <option value="">실내/야외 전체</option><option value="true">실내</option><option value="false">야외</option>
-      </select>
+    <div id="out">
+      <div id="weather"></div>
+      <div id="answer"></div>
+      <div id="trace"></div>
     </div>
-    <button id="go">관광지 찾기</button>
-    <div id="msg"></div>
+    <div id="row">
+      <input id="q" placeholder="예: 내일 비 오는데 서쪽에서 갈 만한 곳" autocomplete="off">
+      <button id="go">추천받기</button>
+    </div>
   </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
@@ -53,29 +57,49 @@
     const layer = L.layerGroup().addTo(map);
     const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-    async function search() {
-      const q = new URLSearchParams({ area: area.value });
-      if (indoor.value) q.set('indoor', indoor.value);
-      msg.textContent = '불러오는 중…';
+    function show(weatherText, answerText, traceText) {
+      out.classList.add('show');
+      weather.textContent = weatherText;
+      answer.textContent = answerText;
+      trace.textContent = traceText;
+    }
+
+    async function ask() {
+      const message = q.value.trim();
+      if (!message) return;
+      go.disabled = true;
       layer.clearLayers();
+      show('', '도구를 골라 검색하는 중…', '');
       try {
-        const res = await fetch('/api/spots?' + q);
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message }),
+        });
         const data = await res.json();
-        if (data.error) { msg.textContent = data.error; return; }
-        if (!data.spots.length) { msg.textContent = data.message; return; }
+        if (data.error) { show('', data.error, ''); return; }
+
+        const w = data.weather;
+        show(
+          w ? `${w.area} 지금 ${w.now.weather} ${w.now.temperature}°C · 오늘 강수확률 ${w.forecast[0].rain_probability}%` : '',
+          data.answer,
+          data.trace.length ? '사용한 도구: ' + data.trace.map((t) => `${t.tool}(${Object.values(t.input).join(', ')})`).join(' → ') : ''
+        );
         const pts = data.spots.map((s) => {
           L.marker([s.lat, s.lng]).addTo(layer).bindPopup(
             `<b>${esc(s.name)}</b><br>${esc(s.areas.join(', '))} · ${s.indoor ? '실내' : '야외'}<br>${esc(s.description)}` +
             (s.approx ? '<br><small>위치는 대략적입니다</small>' : ''));
           return [s.lat, s.lng];
         });
-        map.flyToBounds(pts, { padding: [40, 40], maxZoom: 13, duration: 1.2 });
-        msg.textContent = `${data.total_matched}곳 중 ${data.count}곳 표시`;
+        if (pts.length) map.flyToBounds(pts, { padding: [40, 40], maxZoom: 13, duration: 1.2 });
       } catch (e) {
-        msg.textContent = '데이터를 불러오지 못했습니다. 배포된 주소(/api/spots)에서 열어 주세요.';
+        show('', '서버에 연결하지 못했습니다. 배포된 주소에서 열어 주세요.', '');
+      } finally {
+        go.disabled = false;
       }
     }
-    go.addEventListener('click', search);
+    go.addEventListener('click', ask);
+    q.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) ask(); });
   </script>
 </body>
 </html>
