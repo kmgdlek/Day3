@@ -4,6 +4,9 @@ const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 const MAX_STEPS = 5;
 
+// Vercel 대시보드 → Logs 에서 보인다. 키 값은 절대 찍지 않는다.
+const log = (...a) => console.log('[chat]', ...a);
+
 const SYSTEM = [
   '너는 제주 여행 추천 도우미다.',
   '사용자의 요청을 보고 필요한 도구를 스스로 골라 호출한다.',
@@ -25,15 +28,20 @@ async function callGemini(contents) {
       tools: geminiTools,
     }),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || `Gemini HTTP ${res.status}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    log('Gemini 오류', res.status, JSON.stringify(data.error || data));
+    throw new Error(`Gemini ${res.status}: ${data.error?.message || '응답 없음'}`);
+  }
   return data;
 }
 
 // POST /api/chat  { message: "비 오는 날 동쪽에서 갈 만한 곳" }
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST만 지원합니다.' });
+  log('요청', { model: MODEL, hasKey: Boolean(process.env.GEMINI_API_KEY), keyLength: (process.env.GEMINI_API_KEY || '').length, env: process.env.VERCEL_ENV });
   if (!process.env.GEMINI_API_KEY) {
+    log('GEMINI_API_KEY 없음 — 환경변수를 추가한 뒤 Redeploy 했는지 확인');
     return res.status(500).json({ error: '서버에 GEMINI_API_KEY 환경변수가 없습니다.' });
   }
   const message = String(req.body?.message || '').trim().slice(0, 500);
@@ -46,9 +54,13 @@ module.exports = async (req, res) => {
 
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
+      log(`step ${step + 1}: Gemini 호출`);
       const data = await callGemini(contents);
       const content = data.candidates?.[0]?.content;
-      if (!content) throw new Error('Gemini가 응답하지 않았습니다.');
+      if (!content) {
+        log('빈 응답', JSON.stringify({ finish: data.candidates?.[0]?.finishReason, feedback: data.promptFeedback }));
+        throw new Error(`Gemini가 응답하지 않았습니다. (${data.candidates?.[0]?.finishReason || data.promptFeedback?.blockReason || '이유 없음'})`);
+      }
       contents.push(content); // thought signature 등을 포함해 그대로 되돌려 보낸다.
 
       const calls = (content.parts || []).filter((p) => p.functionCall);
@@ -62,6 +74,7 @@ module.exports = async (req, res) => {
       const responses = [];
       for (const { functionCall: { name, args } } of calls) {
         const output = await runTool(name, args || {});
+        log('도구', name, JSON.stringify(args || {}), output.error ? `오류: ${output.error}` : '성공');
         trace.push({ tool: name, input: args || {} });
         if (name === 'find_spots' && !output.error) {
           // 모델에는 좌표 없는 결과를 주고, 지도용 좌표는 따로 모은다.
@@ -74,6 +87,7 @@ module.exports = async (req, res) => {
     }
     return res.status(200).json({ answer: '도구 호출이 너무 길어져 중단했습니다. 질문을 더 간단히 해 주세요.', spots: [], weather, trace });
   } catch (e) {
-    return res.status(500).json({ error: e.message });
+    log('실패', e.stack || e.message);
+    return res.status(500).json({ error: e.message, trace });
   }
 };

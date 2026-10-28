@@ -77,7 +77,10 @@
           body: JSON.stringify({ message }),
         });
         const data = await res.json();
-        if (data.error) { show('', data.error, ''); return; }
+        if (data.error) {
+          show('', '오류: ' + data.error, data.trace?.length ? '실행된 도구: ' + data.trace.map((t) => t.tool).join(' → ') : '상세 로그는 Vercel → Logs, 상태 점검은 /api/health');
+          return;
+        }
 
         const w = data.weather;
         show(
@@ -93,7 +96,7 @@
         });
         if (pts.length) map.flyToBounds(pts, { padding: [40, 40], maxZoom: 13, duration: 1.2 });
       } catch (e) {
-        show('', '서버에 연결하지 못했습니다. 배포된 주소에서 열어 주세요.', '');
+        show('', '서버에 연결하지 못했습니다: ' + e.message, '배포된 주소에서 열었는지, /api/health 가 열리는지 확인하세요.');
       } finally {
         go.disabled = false;
       }
