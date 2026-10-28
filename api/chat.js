@@ -18,22 +18,31 @@ const SYSTEM = [
   '답변은 한국어로 짧게: 날씨 한 줄 요약, 추천 장소 3~5곳(이름과 이유)을 말한다.',
 ].join('\n');
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const RETRY_STATUS = [500, 503, 504]; // 일시적인 서버 과부하
+const RETRY_WAIT = [1000, 2500]; // 최대 2번 재시도 (함수 제한 시간 30초 안에서)
+
 async function callGemini(contents) {
-  const res = await fetch(ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: SYSTEM }] },
-      contents,
-      tools: geminiTools,
-    }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    log('Gemini 오류', res.status, JSON.stringify(data.error || data));
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: SYSTEM }] },
+        contents,
+        tools: geminiTools,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) return data;
+
+    log('Gemini 오류', res.status, `시도 ${attempt + 1}`, JSON.stringify(data.error || data));
+    if (RETRY_STATUS.includes(res.status) && attempt < RETRY_WAIT.length) {
+      await sleep(RETRY_WAIT[attempt]);
+      continue;
+    }
     throw new Error(`Gemini ${res.status}: ${data.error?.message || '응답 없음'}`);
   }
-  return data;
 }
 
 // POST /api/chat  { message: "비 오는 날 동쪽에서 갈 만한 곳" }

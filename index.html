@@ -8,35 +8,41 @@
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, sans-serif; }
-    #map { position: fixed; inset: 0; }
-    #panel {
-      position: fixed; z-index: 1000; left: 50%; bottom: 24px; transform: translateX(-50%);
-      width: min(92vw, 460px); padding: 14px; background: #fff; border-radius: 16px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, .22); display: grid; gap: 10px;
+    #side {
+      position: fixed; z-index: 1000; top: 0; bottom: 0; left: 0; width: 380px; padding: 20px;
+      background: #fff; box-shadow: 2px 0 16px rgba(0, 0, 0, .15);
+      display: flex; flex-direction: column; gap: 14px;
     }
-    #row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
-    input, button { font: inherit; padding: 10px; border-radius: 10px; border: 1px solid #ccc; }
+    #side h1 { margin: 0; font-size: 20px; }
+    #row { display: grid; gap: 8px; }
+    input, button { font: inherit; padding: 12px; border-radius: 10px; border: 1px solid #ccc; }
     button { border: 0; background: #ff7a00; color: #fff; font-weight: 600; cursor: pointer; }
     button:hover { background: #e66d00; }
     button:disabled { background: #bbb; cursor: wait; }
-    #out { display: none; max-height: 34vh; overflow-y: auto; gap: 8px; }
+    #out { display: none; flex: 1; overflow-y: auto; gap: 10px; align-content: start; }
     #out.show { display: grid; }
     #weather { font-size: 13px; color: #0b5; font-weight: 600; }
-    #answer { white-space: pre-wrap; font-size: 14px; line-height: 1.5; }
+    #answer { white-space: pre-wrap; font-size: 14px; line-height: 1.6; }
     #trace { font-size: 12px; color: #777; }
+    #map { position: fixed; top: 0; bottom: 0; right: 0; left: 380px; }
+    @media (max-width: 700px) {
+      #side { top: auto; width: 100%; max-height: 55vh; border-radius: 16px 16px 0 0; }
+      #map { left: 0; }
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <div id="panel">
+  <div id="side">
+    <h1>제주 여행 추천</h1>
+    <div id="row">
+      <input id="q" placeholder="예: 내일 비 오는데 서쪽에서 갈 만한 곳" autocomplete="off">
+      <button id="go">추천받기</button>
+    </div>
     <div id="out">
       <div id="weather"></div>
       <div id="answer"></div>
       <div id="trace"></div>
-    </div>
-    <div id="row">
-      <input id="q" placeholder="예: 내일 비 오는데 서쪽에서 갈 만한 곳" autocomplete="off">
-      <button id="go">추천받기</button>
     </div>
   </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -57,6 +63,7 @@
     const layer = L.layerGroup().addTo(map);
     const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+    const FAIL = '추천을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.';
     function show(weatherText, answerText, traceText) {
       out.classList.add('show');
       weather.textContent = weatherText;
@@ -77,10 +84,7 @@
           body: JSON.stringify({ message }),
         });
         const data = await res.json();
-        if (data.error) {
-          show('', '오류: ' + data.error, data.trace?.length ? '실행된 도구: ' + data.trace.map((t) => t.tool).join(' → ') : '상세 로그는 Vercel → Logs, 상태 점검은 /api/health');
-          return;
-        }
+        if (data.error) { console.error(data.error); show('', FAIL, ''); return; }
 
         const w = data.weather;
         show(
@@ -96,7 +100,8 @@
         });
         if (pts.length) map.flyToBounds(pts, { padding: [40, 40], maxZoom: 13, duration: 1.2 });
       } catch (e) {
-        show('', '서버에 연결하지 못했습니다: ' + e.message, '배포된 주소에서 열었는지, /api/health 가 열리는지 확인하세요.');
+        console.error(e);
+        show('', FAIL, '');
       } finally {
         go.disabled = false;
       }
